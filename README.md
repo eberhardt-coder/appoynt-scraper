@@ -1,6 +1,6 @@
 # APPOYNT Lead Scraper
 
-Lead-Scraper fuer APPOYNT: Sammelt Business-Kontaktdaten (inkl. E-Mail) von Google Maps fuer Cold-Email-Outreach.
+Lead-Scraper fuer APPOYNT: Sammelt Business-Kontaktdaten (inkl. E-Mail) von Google Maps fuer Cold-Email-Outreach und Cold-Calling-Outreach.
 
 ## Setup
 
