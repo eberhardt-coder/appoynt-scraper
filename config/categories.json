@@ -1,5 +1,5 @@
 {
-  "description": "Suchbegriffe pro Branche fuer Google Places API. Mehrere Begriffe pro Kategorie erhoehen die Trefferquote.",
+  "description": "Suchbegriffe pro Branche fuer Google Places API. Mehrere Begriffe pro Kategorie erhoehen die Trefferquote. Fokus auf terminbasierte Businesses die WhatsApp nutzen und offene Kalender (Google/Outlook) haben.",
   "categories": {
     "friseur": {
       "label": "Friseur / Friseursalon",
@@ -19,6 +19,61 @@
     "tattoo": {
       "label": "Tattoo Studio",
       "search_terms": ["Tattoo Studio", "Tattoostudio", "Tattoo", "Tätowierer"],
+      "place_type": null
+    },
+    "personal_trainer": {
+      "label": "Personal Trainer / Fitness Coach",
+      "search_terms": ["Personal Trainer", "Personal Training", "Fitness Coach", "Fitnesstrainer", "Personal Coaching Fitness"],
+      "place_type": "gym"
+    },
+    "massage": {
+      "label": "Massage Studio / Massagepraxis",
+      "search_terms": ["Massage Studio", "Massagepraxis", "Masseur", "Massage Therapie", "Thai Massage"],
+      "place_type": null
+    },
+    "physiotherapie": {
+      "label": "Physiotherapie",
+      "search_terms": ["Physiotherapie", "Physiotherapeut", "Krankengymnastik", "Physiopraxis"],
+      "place_type": "physiotherapist"
+    },
+    "heilpraktiker": {
+      "label": "Heilpraktiker / Naturheilpraxis",
+      "search_terms": ["Heilpraktiker", "Naturheilpraxis", "Alternativmedizin", "Heilpraxis", "Homöopathie"],
+      "place_type": null
+    },
+    "yoga": {
+      "label": "Yoga Studio / Pilates",
+      "search_terms": ["Yoga Studio", "Yogastudio", "Pilates Studio", "Yoga Kurs", "Pilates"],
+      "place_type": null
+    },
+    "osteopathie": {
+      "label": "Osteopathie / Chiropraktik",
+      "search_terms": ["Osteopathie", "Osteopath", "Chiropraktiker", "Chiropraktik"],
+      "place_type": null
+    },
+    "fotograf": {
+      "label": "Fotograf / Fotostudio",
+      "search_terms": ["Fotograf", "Fotostudio", "Fotografin", "Hochzeitsfotograf", "Fotografie"],
+      "place_type": null
+    },
+    "fahrschule": {
+      "label": "Fahrschule",
+      "search_terms": ["Fahrschule", "Führerschein", "Fahrlehrer"],
+      "place_type": null
+    },
+    "nachhilfe": {
+      "label": "Nachhilfe / Tutor",
+      "search_terms": ["Nachhilfe", "Nachhilfelehrer", "Lernstudio", "Nachhilfeinstitut", "Tutoring"],
+      "place_type": null
+    },
+    "coaching": {
+      "label": "Life Coach / Business Coach",
+      "search_terms": ["Life Coach", "Business Coach", "Coaching", "Karrierecoach", "Lebensberatung"],
+      "place_type": null
+    },
+    "ernaehrungsberatung": {
+      "label": "Ernährungsberatung",
+      "search_terms": ["Ernährungsberatung", "Ernährungsberater", "Diätberatung", "Ernährungscoach"],
       "place_type": null
     }
   }
