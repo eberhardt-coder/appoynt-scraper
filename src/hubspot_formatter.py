@@ -11,6 +11,7 @@ kuemmert sich um das korrekte Mapping und erstellt zwei separate CSVs:
 
 import csv
 import logging
+from datetime import date
 from pathlib import Path
 
 from config.settings import OUTPUT_DIR, LEADS_WITH_EMAIL_CSV, LEADS_COLD_CALLING_CSV, LEADS_WHATSAPP_READY_CSV
@@ -39,6 +40,7 @@ HUBSPOT_COLUMNS = [
     ("booking_system", "booking_system"),          # z.B. "Calendly", "Treatwell"
     ("booking_url", "booking_url"),                # URL zur Buchungsseite
     ("sales_opener", "sales_opener"),              # Personalisierter Opener-Text
+    ("_scrape_date", "scrape_date"),               # Datum des Scrapes (YYYY-MM-DD)
 ]
 
 
@@ -73,6 +75,8 @@ def _write_csv(leads: list[dict], filepath: Path, logger: logging.Logger) -> Non
                     row.append("")
                 elif field_key == "_lead_source":
                     row.append("Scraper")
+                elif field_key == "_scrape_date":
+                    row.append(date.today().isoformat())
                 else:
                     value = lead.get(field_key, "")
                     # Booleans in HubSpot-kompatible Strings umwandeln

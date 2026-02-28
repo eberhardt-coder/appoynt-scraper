@@ -169,6 +169,8 @@ class CheckpointManager:
         CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
         self.filepath = CHECKPOINT_DIR / f"{checkpoint_name}.json"
         self.data = self._load()
+        # Permanentes Dedup-Register einmal beim Start in den Speicher laden
+        self._permanent_ids = self._load_permanent_dedup()
 
     def _load(self) -> dict:
         """Laedt einen bestehenden Checkpoint oder erstellt einen neuen."""
@@ -185,6 +187,10 @@ class CheckpointManager:
         """Speichert den aktuellen Fortschritt auf die Festplatte."""
         with open(self.filepath, "w", encoding="utf-8") as f:
             json.dump(self.data, f, ensure_ascii=False, indent=2)
+
+    def finalize(self) -> None:
+        """Am Ende eines Runs aufrufen: sichert alle IDs ins permanente Register."""
+        self._save_to_permanent_dedup(self.data["seen_ids"])
 
     def is_processed(self, city: str, category: str) -> bool:
         """Prueft ob eine Stadt+Kategorie-Kombination schon abgearbeitet wurde."""
@@ -203,17 +209,57 @@ class CheckpointManager:
         return lead_id in self.data["seen_ids"]
 
     def add_lead(self, lead: dict, lead_id: str) -> None:
-        """Fuegt einen neuen Lead hinzu und speichert den Checkpoint."""
-        if lead_id not in self.data["seen_ids"]:
+        """Fuegt einen neuen Lead hinzu und speichert den Checkpoint.
+        Schreibt die ID auch ins permanente Dedup-Register."""
+        if not self.is_duplicate(lead_id):
             self.data["seen_ids"].append(lead_id)
+            self._permanent_ids.add(lead_id)
             self.data["leads"].append(lead)
             self.save()
+            # Permanent speichern alle 50 Leads (batch fuer Performance)
+            if len(self.data["seen_ids"]) % 50 == 0:
+                self._save_to_permanent_dedup(self.data["seen_ids"])
 
     def get_leads(self) -> list[dict]:
         """Gibt alle bisher gesammelten Leads zurueck."""
         return self.data["leads"]
 
     def reset(self) -> None:
-        """Setzt den Checkpoint komplett zurueck (loescht allen Fortschritt)."""
+        """Setzt den Checkpoint zurueck (Leads + Fortschritt werden geloescht).
+        WICHTIG: seen_ids bleiben erhalten, damit kein Lead jemals doppelt generiert wird.
+        Das permanente Dedup-Register ueberlebt jeden Reset.
+        """
+        # Alle bisherigen IDs ins permanente Register sichern
+        self._save_to_permanent_dedup(self.data.get("seen_ids", []))
+
+        # Checkpoint zuruecksetzen: Leads und Fortschritt weg, aber seen_ids bleiben
         self.data = {"processed_keys": [], "leads": [], "seen_ids": []}
         self.save()
+
+        # Permanentes Register neu ins Memory laden
+        self._permanent_ids = self._load_permanent_dedup()
+
+    def _get_permanent_dedup_path(self) -> Path:
+        """Pfad zur permanenten Dedup-Datei (ueberlebt Checkpoint-Resets)."""
+        return CHECKPOINT_DIR / "seen_leads_permanent.json"
+
+    def _load_permanent_dedup(self) -> set:
+        """Laedt alle jemals gesehenen Lead-IDs aus der permanenten Datei."""
+        path = self._get_permanent_dedup_path()
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        return set()
+
+    def _save_to_permanent_dedup(self, ids: list) -> None:
+        """Speichert Lead-IDs in die permanente Dedup-Datei (mergt mit bestehenden)."""
+        path = self._get_permanent_dedup_path()
+        existing = self._load_permanent_dedup()
+        existing.update(ids)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(sorted(existing), f)
+
+    def is_duplicate(self, lead_id: str) -> bool:
+        """Prueft ob ein Business schon jemals gescrapt wurde.
+        Checkt sowohl den aktuellen Checkpoint als auch das permanente Register."""
+        return lead_id in self.data["seen_ids"] or lead_id in self._permanent_ids

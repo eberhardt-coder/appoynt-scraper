@@ -219,6 +219,7 @@ def scrape_leads(
     categories: dict | None = None,
     specific_city: str | None = None,
     specific_category: str | None = None,
+    specific_categories: list[str] | None = None,
     logger: logging.Logger | None = None,
 ) -> list[dict]:
     """
@@ -229,6 +230,7 @@ def scrape_leads(
         categories: Kategorie-Definitionen. Wenn None, wird die Datei geladen.
         specific_city: Optional - nur diese eine Stadt scrapen
         specific_category: Optional - nur diese eine Kategorie scrapen
+        specific_categories: Optional - nur diese Kategorien scrapen (Liste)
         logger: Logger
 
     Returns:
@@ -258,7 +260,17 @@ def scrape_leads(
             logger.error(f"Stadt '{specific_city}' nicht in cities.json gefunden!")
             return []
 
-    if specific_category:
+    if specific_categories:
+        # Mehrere Kategorien gleichzeitig filtern
+        filtered = {k: categories[k] for k in specific_categories if k in categories}
+        if not filtered:
+            logger.error(
+                f"Keine der Kategorien gefunden! "
+                f"Verfuegbar: {', '.join(categories.keys())}"
+            )
+            return []
+        categories = filtered
+    elif specific_category:
         if specific_category not in categories:
             logger.error(
                 f"Kategorie '{specific_category}' nicht gefunden! "
@@ -411,6 +423,9 @@ def scrape_leads(
 
             # Kombination als erledigt markieren
             checkpoint.mark_processed(city_name, cat_key)
+
+    # Permanentes Dedup-Register sichern
+    checkpoint.finalize()
 
     all_leads = checkpoint.get_leads()
     leads_with_email = [l for l in all_leads if l["email"]]

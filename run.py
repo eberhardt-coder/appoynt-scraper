@@ -51,7 +51,12 @@ Beispiele:
     parser.add_argument(
         "--category",
         type=str,
-        help="Kategorie-Key (z.B. friseur, kosmetik, piercing, tattoo)",
+        help="Einzelne Kategorie (z.B. friseur, kosmetik)",
+    )
+    parser.add_argument(
+        "--categories",
+        type=str,
+        help="Komma-getrennte Kategorien (z.B. coaching,yoga,massage)",
     )
     parser.add_argument(
         "--city",
@@ -72,9 +77,9 @@ Beispiele:
     args = parser.parse_args()
 
     # Mindestens eine Option muss angegeben sein
-    if not args.all and not args.category and not args.city:
+    if not args.all and not args.category and not args.categories and not args.city:
         parser.print_help()
-        print("\nFehler: Bitte --all, --category und/oder --city angeben.")
+        print("\nFehler: Bitte --all, --category, --categories und/oder --city angeben.")
         sys.exit(1)
 
     # Logger starten
@@ -87,7 +92,19 @@ Beispiele:
     categories = load_categories()
     logger.info(f"Verfuegbare Kategorien: {', '.join(categories.keys())}")
 
-    # Kategorie validieren falls angegeben
+    # --categories in Liste umwandeln
+    category_list = None
+    if args.categories:
+        category_list = [c.strip() for c in args.categories.split(",")]
+        for cat in category_list:
+            if cat not in categories:
+                logger.error(
+                    f"Unbekannte Kategorie: '{cat}'. "
+                    f"Verfuegbar: {', '.join(categories.keys())}"
+                )
+                sys.exit(1)
+
+    # Kategorie validieren falls einzelne angegeben
     if args.category and args.category not in categories:
         logger.error(
             f"Unbekannte Kategorie: '{args.category}'. "
@@ -106,13 +123,19 @@ Beispiele:
         logger.info("Modus: BATCH (alle Staedte x alle Kategorien)")
     else:
         city_str = args.city or "alle Staedte"
-        cat_str = args.category or "alle Kategorien"
+        if category_list:
+            cat_str = ", ".join(category_list)
+        elif args.category:
+            cat_str = args.category
+        else:
+            cat_str = "alle Kategorien"
         logger.info(f"Modus: {city_str} / {cat_str}")
 
     # Scraping starten
     leads = scrape_leads(
         specific_city=args.city,
         specific_category=args.category,
+        specific_categories=category_list,
         logger=logger,
     )
 
