@@ -1,0 +1,21 @@
+# API Keys und Secrets - NIEMALS committen!
+.env
+
+# Output-Dateien (werden lokal generiert)
+output/*.csv
+output/checkpoints/
+
+# Log-Dateien
+logs/*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

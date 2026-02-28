@@ -1,0 +1,25 @@
+{
+  "description": "Suchbegriffe pro Branche fuer Google Places API. Mehrere Begriffe pro Kategorie erhoehen die Trefferquote.",
+  "categories": {
+    "friseur": {
+      "label": "Friseur / Friseursalon",
+      "search_terms": ["Friseur", "Friseursalon", "Hairstylist", "Barbershop", "Frisör"],
+      "place_type": "hair_care"
+    },
+    "kosmetik": {
+      "label": "Kosmetikstudio / Beauty Salon",
+      "search_terms": ["Kosmetikstudio", "Beauty Salon", "Kosmetik", "Beautysalon", "Nagelstudio"],
+      "place_type": "beauty_salon"
+    },
+    "piercing": {
+      "label": "Piercing Studio",
+      "search_terms": ["Piercing Studio", "Piercing", "Piercingstudio", "Body Piercing"],
+      "place_type": null
+    },
+    "tattoo": {
+      "label": "Tattoo Studio",
+      "search_terms": ["Tattoo Studio", "Tattoostudio", "Tattoo", "Tätowierer"],
+      "place_type": null
+    }
+  }
+}
