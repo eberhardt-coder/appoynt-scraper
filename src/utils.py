@@ -77,20 +77,26 @@ def retry_request(
     url: str,
     params: dict | None = None,
     logger: logging.Logger | None = None,
+    method: str = "GET",
+    json_body: dict | None = None,
+    headers: dict | None = None,
 ) -> requests.Response | None:
     """
-    Fuehrt einen GET-Request mit automatischem Rate Limiting und Retry durch.
+    Fuehrt einen HTTP-Request mit automatischem Rate Limiting und Retry durch.
 
     So funktioniert's:
     1. Wartet mindestens REQUEST_DELAY_SECONDS seit dem letzten Request (Rate Limiting)
-    2. Sendet den Request
+    2. Sendet den Request (GET oder POST)
     3. Bei Fehler: wartet RETRY_BACKOFF_SECONDS * 2^versuch und versucht es nochmal
     4. Nach MAX_RETRIES Versuchen gibt die Funktion None zurueck
 
     Args:
-        url: Die URL fuer den GET-Request
-        params: Query-Parameter (z.B. {"key": "abc", "query": "Friseur Berlin"})
+        url: Die URL fuer den Request
+        params: Query-Parameter (fuer GET-Requests)
         logger: Optional - Logger fuer Statusmeldungen
+        method: HTTP-Methode ("GET" oder "POST")
+        json_body: JSON-Body (fuer POST-Requests)
+        headers: Zusaetzliche HTTP-Header
 
     Returns:
         Response-Objekt bei Erfolg, None bei endgueltigem Fehler
@@ -105,7 +111,16 @@ def retry_request(
 
         try:
             _last_request_time = time.time()
-            response = requests.get(url, params=params, timeout=HTTP_TIMEOUT_SECONDS)
+
+            if method.upper() == "POST":
+                response = requests.post(
+                    url, json=json_body, headers=headers, timeout=HTTP_TIMEOUT_SECONDS
+                )
+            else:
+                response = requests.get(
+                    url, params=params, headers=headers, timeout=HTTP_TIMEOUT_SECONDS
+                )
+
             response.raise_for_status()
             return response
 

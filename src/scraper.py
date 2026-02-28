@@ -1,21 +1,24 @@
 from __future__ import annotations
 
 """
-Haupt-Scraper: Nutzt die Google Places API um Businesses zu finden und
+Haupt-Scraper: Nutzt die Google Places API (New) um Businesses zu finden und
 extrahiert dann E-Mails von deren Websites.
 
 Ablauf pro Stadt + Kategorie:
-1. Google Places Text Search -> Liste von Businesses
-2. Pro Business: Details abrufen (Adresse, Telefon, Website, Rating)
-3. Website besuchen und E-Mail extrahieren
-4. Lead speichern (mit Checkpoint fuer Wiederaufnahme)
+1. Google Places Text Search (New) -> Liste von Businesses mit Details
+2. Website besuchen und E-Mail extrahieren
+3. Lead speichern (mit Checkpoint fuer Wiederaufnahme)
 
-Verwendet die Google Places API (New) mit dem textsearch Endpoint.
+Verwendet die Google Places API (New) – die aktuelle Version.
+Die neue API liefert alle Details direkt in der Text Search Antwort,
+dadurch brauchen wir keinen separaten Details-Request mehr (spart Kosten!).
+
 Docs: https://developers.google.com/maps/documentation/places/web-service/text-search
 """
 
 import json
 import logging
+import time
 
 from config.settings import (
     GOOGLE_API_KEY,
@@ -27,9 +30,8 @@ from src.utils import retry_request, make_lead_id, CheckpointManager
 from src.email_extractor import extract_email
 
 
-# Google Places API Endpoints
-TEXTSEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
-DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
+# Google Places API (New) Endpoint
+TEXTSEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 
 
 def load_cities() -> list[dict]:
@@ -52,122 +54,132 @@ def _search_places(
     logger: logging.Logger,
 ) -> list[dict]:
     """
-    Sucht Businesses ueber die Google Places Text Search API.
+    Sucht Businesses ueber die Google Places Text Search API (New).
 
-    Die Text Search API ist flexibler als Nearby Search, weil sie natuerlichsprachige
-    Suchanfragen versteht (z.B. "Friseur Berlin Mitte"). Sie gibt bis zu 60 Ergebnisse
-    zurueck (20 pro Seite, 3 Seiten max).
+    Die neue API verwendet POST-Requests und liefert alle Details
+    (Name, Adresse, Telefon, Website, Rating) direkt in einer Antwort.
+    Das spart einen separaten Details-Request pro Business.
+
+    Paginierung: Die neue API nutzt pageToken im Response-Body.
+    Pro Seite kommen bis zu 20 Ergebnisse, maximal 3 Seiten (= 60 Ergebnisse).
 
     Args:
         query: Suchbegriff z.B. "Friseur Berlin"
-        place_type: Google Place Type z.B. "hair_care" (optional, schraenkt Ergebnisse ein)
+        place_type: Google Place Type z.B. "hair_care" (optional)
         logger: Logger fuer Statusmeldungen
 
     Returns:
-        Liste von Place-Dictionaries mit place_id, name, etc.
+        Liste von Place-Dictionaries
     """
     all_results = []
 
-    params = {
-        "query": query,
-        "key": GOOGLE_API_KEY,
-        "language": "de",
-        "region": "de",
+    # Header: API Key + welche Felder wir zurueck haben wollen (spart Kosten)
+    headers = {
+        "X-Goog-Api-Key": GOOGLE_API_KEY,
+        "X-Goog-FieldMask": (
+            "places.id,"
+            "places.displayName,"
+            "places.formattedAddress,"
+            "places.addressComponents,"
+            "places.nationalPhoneNumber,"
+            "places.internationalPhoneNumber,"
+            "places.websiteUri,"
+            "places.rating,"
+            "places.userRatingCount,"
+            "places.businessStatus,"
+            "nextPageToken"
+        ),
+        "Content-Type": "application/json",
     }
 
+    # Request Body
+    body = {
+        "textQuery": query,
+        "languageCode": "de",
+        "regionCode": "DE",
+        "pageSize": 20,
+    }
+
+    # Optional: Place Type Filter (z.B. nur "hair_care" Ergebnisse)
     if place_type:
-        params["type"] = place_type
+        body["includedType"] = place_type
 
     logger.info(f"Suche: '{query}'" + (f" (type={place_type})" if place_type else ""))
 
     # Erste Seite abrufen
-    response = retry_request(TEXTSEARCH_URL, params=params, logger=logger)
+    response = retry_request(
+        TEXTSEARCH_URL,
+        logger=logger,
+        method="POST",
+        json_body=body,
+        headers=headers,
+    )
     if not response:
         return []
 
     data = response.json()
-    status = data.get("status", "UNKNOWN")
 
-    if status != "OK":
-        if status == "ZERO_RESULTS":
-            logger.info(f"Keine Ergebnisse fuer '{query}'")
-        else:
-            logger.warning(f"Places API Fehler: {status} - {data.get('error_message', '')}")
+    # Fehler pruefen
+    if "error" in data:
+        error = data["error"]
+        logger.warning(
+            f"Places API Fehler: {error.get('code')} - {error.get('message', '')}"
+        )
         return []
 
-    all_results.extend(data.get("results", []))
-    logger.info(f"Seite 1: {len(data.get('results', []))} Ergebnisse")
+    places = data.get("places", [])
+    all_results.extend(places)
 
-    # Weitere Seiten abrufen (Google gibt max 3 Seiten mit je 20 Ergebnissen)
+    if not places:
+        logger.info(f"Keine Ergebnisse fuer '{query}'")
+        return []
+
+    logger.info(f"Seite 1: {len(places)} Ergebnisse")
+
+    # Weitere Seiten abrufen (max 3 Seiten)
     page = 2
-    while "next_page_token" in data and page <= 3:
-        # Google braucht eine kurze Pause bevor der next_page_token gueltig wird
-        import time
-        time.sleep(2)
+    while "nextPageToken" in data and page <= 3:
+        time.sleep(2)  # Google braucht kurz bevor der Token gueltig wird
 
-        next_params = {
-            "pagetoken": data["next_page_token"],
-            "key": GOOGLE_API_KEY,
+        body_next = {
+            "textQuery": query,
+            "languageCode": "de",
+            "regionCode": "DE",
+            "pageSize": 20,
+            "pageToken": data["nextPageToken"],
         }
-        response = retry_request(TEXTSEARCH_URL, params=next_params, logger=logger)
+        if place_type:
+            body_next["includedType"] = place_type
+
+        response = retry_request(
+            TEXTSEARCH_URL,
+            logger=logger,
+            method="POST",
+            json_body=body_next,
+            headers=headers,
+        )
         if not response:
             break
 
         data = response.json()
-        if data.get("status") != "OK":
+        places = data.get("places", [])
+        if not places:
             break
 
-        all_results.extend(data.get("results", []))
-        logger.info(f"Seite {page}: {len(data.get('results', []))} Ergebnisse")
+        all_results.extend(places)
+        logger.info(f"Seite {page}: {len(places)} Ergebnisse")
         page += 1
 
     logger.info(f"Insgesamt {len(all_results)} Ergebnisse fuer '{query}'")
     return all_results
 
 
-def _get_place_details(place_id: str, logger: logging.Logger) -> dict | None:
-    """
-    Ruft detaillierte Informationen zu einem Business ab.
-
-    Die Details API liefert Daten die in der Text Search nicht enthalten sind,
-    insbesondere: formatierte Adresse, Telefonnummer, Website, Oeffnungszeiten.
-
-    Args:
-        place_id: Google Place ID (eindeutige Kennung)
-        logger: Logger
-
-    Returns:
-        Dictionary mit Place-Details oder None bei Fehler
-    """
-    params = {
-        "place_id": place_id,
-        "key": GOOGLE_API_KEY,
-        "language": "de",
-        "fields": (
-            "name,formatted_address,formatted_phone_number,"
-            "website,rating,user_ratings_total,"
-            "address_components,business_status"
-        ),
-    }
-
-    response = retry_request(DETAILS_URL, params=params, logger=logger)
-    if not response:
-        return None
-
-    data = response.json()
-    if data.get("status") != "OK":
-        logger.debug(f"Details-Fehler fuer {place_id}: {data.get('status')}")
-        return None
-
-    return data.get("result")
-
-
 def _parse_address_components(components: list[dict]) -> dict:
     """
-    Zerlegt die Google Address Components in einzelne Felder.
+    Zerlegt die Google Address Components (neues Format) in einzelne Felder.
 
-    Google liefert die Adresse als Liste von Komponenten, z.B.:
-    [{"long_name": "Berlin", "types": ["locality"]}, ...]
+    Die neue API liefert die Adresse in einem anderen Format als die alte:
+    [{"types": ["route"], "longText": "Hauptstraße"}, ...]
 
     Diese Funktion extrahiert daraus: Strasse, Hausnummer, PLZ, Stadt, Bundesland.
     """
@@ -184,7 +196,8 @@ def _parse_address_components(components: list[dict]) -> dict:
 
     for comp in components:
         types = comp.get("types", [])
-        name = comp.get("long_name", "")
+        # Neue API nutzt "longText" statt "long_name"
+        name = comp.get("longText", comp.get("long_name", ""))
 
         if "route" in types:
             result["street"] = name
@@ -292,12 +305,19 @@ def scrape_leads(
                 places = _search_places(query, cat_data.get("place_type"), logger)
 
                 for place in places:
-                    place_id = place.get("place_id")
+                    # Place ID aus der neuen API (Format: "places/ChIJ...")
+                    place_id = place.get("id", "")
                     if not place_id or place_id in seen_place_ids:
                         continue
                     seen_place_ids.add(place_id)
 
-                    name = place.get("name", "")
+                    # Name aus displayName-Objekt
+                    display_name = place.get("displayName", {})
+                    name = display_name.get("text", "") if isinstance(display_name, dict) else str(display_name)
+
+                    if not name:
+                        continue
+
                     lead_id = make_lead_id(name, city_name)
 
                     # Duplikat-Check
@@ -305,24 +325,19 @@ def scrape_leads(
                         logger.debug(f"Duplikat uebersprungen: {name} ({city_name})")
                         continue
 
-                    # Details abrufen
-                    details = _get_place_details(place_id, logger)
-                    if not details:
-                        continue
-
                     # Nur aktive Businesses
-                    biz_status = details.get("business_status", "OPERATIONAL")
+                    biz_status = place.get("businessStatus", "OPERATIONAL")
                     if biz_status != "OPERATIONAL":
                         logger.debug(f"Uebersprungen (Status: {biz_status}): {name}")
                         continue
 
                     # Adresse zerlegen
                     addr = _parse_address_components(
-                        details.get("address_components", [])
+                        place.get("addressComponents", [])
                     )
 
                     # Website und E-Mail
-                    website = details.get("website", "")
+                    website = place.get("websiteUri", "")
                     email = None
                     if website:
                         logger.debug(f"Extrahiere E-Mail von: {website}")
@@ -333,6 +348,11 @@ def scrape_leads(
                     if addr["street_number"]:
                         street_full = f"{addr['street']} {addr['street_number']}"
 
+                    # Telefon: nationale Nummer bevorzugen, sonst internationale
+                    phone = place.get("nationalPhoneNumber", "")
+                    if not phone:
+                        phone = place.get("internationalPhoneNumber", "")
+
                     # Lead-Objekt erstellen
                     lead = {
                         "business_name": name,
@@ -342,11 +362,11 @@ def scrape_leads(
                         "postal_code": addr["postal_code"],
                         "city": addr["city"] or city_name,
                         "state": addr["state"] or bundesland,
-                        "phone": details.get("formatted_phone_number", ""),
+                        "phone": phone,
                         "website": website,
                         "email": email or "",
                         "google_rating": place.get("rating", ""),
-                        "google_reviews": place.get("user_ratings_total", ""),
+                        "google_reviews": place.get("userRatingCount", ""),
                     }
 
                     checkpoint.add_lead(lead, lead_id)

@@ -39,40 +39,94 @@ CONTACT_PATHS = [
 
 # E-Mail-Adressen die wir ignorieren wollen (keine echten Kontaktadressen)
 BLACKLIST_PATTERNS = [
+    # Platzhalter und Test-Adressen
     r".*@example\.",
     r".*@test\.",
     r".*@localhost",
+    r"user@domain\.com",
+    r"name@domain\.com",
+    r"email@domain\.com",
+    r"your.*@",
+    # System/NoReply
     r"noreply@",
     r"no-reply@",
     r"mailer-daemon@",
+    # Website-Builder und Tracking (Wix, Sentry, etc.)
     r".*@sentry\.",
+    r".*@sentry-next\.",
     r".*@wixpress\.",
+    r".*@wix\.com",
+    r".*@phorest\.com",
+    # Social Media und Big Tech
     r".*@google\.",
     r".*@facebook\.",
     r".*@instagram\.",
+    r".*@twitter\.",
+    r".*@tiktok\.",
+    # Generische Template-Domains (tauchen auf vielen Websites als Default auf)
+    r".*@ivof\.com",
+    r".*@hair\.com",
+]
+
+# Dateiendungen die faelschlich als E-Mail-Domain erkannt werden
+# z.B. "rubick-price@3x-300x261.png" oder "flags@2x.png"
+BLACKLIST_EXTENSIONS = [
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico",
+    ".js", ".css", ".php", ".html", ".htm",
 ]
 
 
 def _is_valid_email(email: str) -> bool:
     """
     Prueft ob eine E-Mail-Adresse gueltig und relevant ist.
-    Filtert Muell-Adressen wie noreply@, test@, etc. raus.
+    Filtert Muell-Adressen wie noreply@, test@, Bild-Dateinamen, etc. raus.
     """
     email = email.lower().strip()
 
+    # E-Mails mit URL-Encoding sind aus URLs extrahiert und kein echter Kontakt
+    # z.B. "info@fadeclub.de%20" -> ungueltig
+    if "%" in email:
+        return False
+
     # Zu kurz oder zu lang?
     if len(email) < 5 or len(email) > 254:
+        return False
+
+    # Muss genau ein @ haben
+    if email.count("@") != 1:
+        return False
+
+    local_part, domain = email.split("@")
+
+    # Local part und Domain muessen existieren
+    if not local_part or not domain:
+        return False
+
+    # Domain muss einen Punkt haben (echte TLD)
+    if "." not in domain:
+        return False
+
+    # Domain darf nicht mit einer Bild/Code-Endung enden
+    for ext in BLACKLIST_EXTENSIONS:
+        if domain.endswith(ext):
+            return False
+
+    # Hex-Strings sind keine echten E-Mails (z.B. "605a7bae...@sentry-next.wixpress.com")
+    if len(local_part) > 20 and all(c in "0123456789abcdef" for c in local_part.replace("-", "")):
+        return False
+
+    # Unicode-Artefakte rausfiltern (z.B. "u002f@throne.friseur")
+    if local_part.startswith("u00") or local_part.startswith("\\u"):
+        return False
+
+    # "mailto:" Reste rausfiltern (z.B. "mailto:info@..." wurde nicht sauber geparsed)
+    if local_part.startswith("mailto:"):
         return False
 
     # Gegen Blacklist pruefen
     for pattern in BLACKLIST_PATTERNS:
         if re.match(pattern, email, re.IGNORECASE):
             return False
-
-    # Muss eine echte TLD haben (mindestens 2 Zeichen nach dem letzten Punkt)
-    domain = email.split("@")[-1]
-    if "." not in domain:
-        return False
 
     return True
 
@@ -223,6 +277,11 @@ def extract_email(website_url: str, logger: logging.Logger | None = None) -> str
 
     # Schritt 3: Beste E-Mail auswaehlen
     best = _pick_best_email(list(set(all_emails)))
+
+    # Letzte Bereinigung: mailto:-Prefix, URL-Encoding, Whitespace entfernen
+    if best:
+        best = best.replace("mailto:", "").replace("%20", "").strip()
+
     if logger and best:
         logger.debug(f"Beste E-Mail fuer {website_url}: {best}")
 
